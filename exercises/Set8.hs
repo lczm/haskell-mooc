@@ -64,7 +64,8 @@ justADot = Picture f
 
 -- Here's a picture that's just a solid color
 solid :: Color -> Picture
-solid color = Picture (\coord -> color)
+-- solid color = Picture (\coord -> color)
+solid color = Picture (const color)
 
 -- Here's a simple picture:
 examplePicture1 = Picture f
@@ -108,6 +109,10 @@ colorToHex (Color r g b) = showHex r ++ showHex g ++ showHex b
 
 getPixel :: Picture -> Int -> Int -> String
 getPixel (Picture f) x y = colorToHex (f (Coord x y))
+
+getColor :: Picture -> Int -> Int -> Color
+getColor (Picture p) x y = p (Coord x y)
+
 renderList :: Picture -> (Int,Int) -> (Int,Int) -> [[String]]
 renderList picture (minx,maxx) (miny,maxy) =
   [[getPixel picture x y | x <- [minx..maxx]] | y <- [miny..maxy]]
@@ -133,7 +138,10 @@ renderListExample = renderList justADot (9,11) (9,11)
 --      ["000000","000000","000000"]]
 
 dotAndLine :: Picture
-dotAndLine = todo
+dotAndLine = Picture f
+  where f (Coord 3 4) = white
+        f (Coord _ 8) = pink
+        f (Coord _ _ ) = black
 ------------------------------------------------------------------------------
 
 ------------------------------------------------------------------------------
@@ -166,10 +174,12 @@ dotAndLine = todo
 --          ["7f0000","7f0000","7f0000"]]
 
 blendColor :: Color -> Color -> Color
-blendColor = todo
+blendColor (Color a b c) (Color x y z) = Color ((a+x)`div`2) ((b+y)`div`2) ((c+z)`div`2)
 
 combine :: (Color -> Color -> Color) -> Picture -> Picture -> Picture
-combine = todo
+-- combine f p1 p2 = Picture ff
+--   where ff (Coord x y) = f (getColor p1 x y) (getColor p2 x y)
+combine f (Picture p1) (Picture p2) = Picture (\p -> f (p1 p) (p2 p))
 
 ------------------------------------------------------------------------------
 
@@ -230,7 +240,10 @@ exampleCircle = fill red (circle 80 100 200)
 --        ["000000","000000","000000","000000","000000","000000"]]
 
 rectangle :: Int -> Int -> Int -> Int -> Shape
-rectangle x0 y0 w h = todo
+rectangle x0 y0 w h = Shape f
+  where f (Coord x y) = if x >= x0 && x < x0+w && y >= y0 && y < y0+h
+                           then True
+                           else False
 ------------------------------------------------------------------------------
 
 ------------------------------------------------------------------------------
@@ -246,10 +259,18 @@ rectangle x0 y0 w h = todo
 -- shape.
 
 union :: Shape -> Shape -> Shape
-union = todo
+union a b = Shape f
+  where f (Coord x y) = if contains a x y || contains b x y
+                           then True
+                           else False
 
 cut :: Shape -> Shape -> Shape
-cut = todo
+cut a b = Shape f
+  where f (Coord x y) = if contains a x y && contains b x y
+                           then False
+                           else if contains a x y
+                             then True
+                             else False
 ------------------------------------------------------------------------------
 
 -- Here's a snowman, built using union from circles and rectangles.
@@ -277,7 +298,10 @@ exampleSnowman = fill white snowman
 --        ["000000","000000","000000"]]
 
 paintSolid :: Color -> Shape -> Picture -> Picture
-paintSolid color shape base = todo
+paintSolid color shape base = Picture f
+  where f (Coord x y) = if contains shape x y
+                           then color
+                           else getColor base x y
 ------------------------------------------------------------------------------
 
 allWhite :: Picture
@@ -322,7 +346,10 @@ stripes a b = Picture f
 --       ["000000","000000","000000","000000","000000"]]
 
 paint :: Picture -> Shape -> Picture -> Picture
-paint pat shape base = todo
+paint pattern shape base = Picture f
+  where f (Coord x y) = if contains shape x y
+                           then getColor pattern x y
+                           else getColor base x y
 ------------------------------------------------------------------------------
 
 -- Here's a patterned version of the snowman example. See it by running:
@@ -338,7 +365,7 @@ examplePatterns = (paint (solid black) hat . paint (stripes red yellow) legs . p
 -- Let's implement zooming and flipping images.
 
 flipCoordXY :: Coord -> Coord
-flipCoordXY (Coord x y) = (Coord y x)
+flipCoordXY (Coord x y) = Coord y x
 
 -- Flip a picture by switching x and y coordinates
 flipXY :: Picture -> Picture
@@ -383,21 +410,21 @@ xy = Picture f
 -- map (10,15) to (15,10).
 
 data Fill = Fill Color
-
-instance Transform Fill where
-  apply = todo
-
 data Zoom = Zoom Int
   deriving Show
-
-instance Transform Zoom where
-  apply = todo
-
 data Flip = FlipX | FlipY | FlipXY
   deriving Show
 
+instance Transform Fill where
+  apply (Fill color) _ = Picture (const color)
+
+instance Transform Zoom where
+  apply (Zoom i) p = zoom i p
+
 instance Transform Flip where
-  apply = todo
+  apply FlipX (Picture p) = Picture (\(Coord x y) -> p $ Coord (-x) y)
+  apply FlipY (Picture p) = Picture (\(Coord x y) -> p $ Coord x (-y))
+  apply FlipXY p = flipXY p
 ------------------------------------------------------------------------------
 
 ------------------------------------------------------------------------------
@@ -412,8 +439,8 @@ instance Transform Flip where
 data Chain a b = Chain a b
   deriving Show
 
-instance Transform (Chain a b) where
-  apply = todo
+instance (Transform a, Transform b) => Transform (Chain a b) where
+  apply (Chain t1 t2) p = apply t1 (apply t2 p)
 ------------------------------------------------------------------------------
 
 -- Now we can redefine largeVerticalStripes using the above Transforms.
@@ -451,7 +478,16 @@ data Blur = Blur
   deriving Show
 
 instance Transform Blur where
-  apply = todo
+  apply Blur (Picture p) = Picture (\(Coord x y) -> avg (map (p . co) $ neighbours x y))
+    where co t = Coord (fst t) (snd t)
+          neighbours x y = [(x,y),(x-1,y),(x+1,y),(x,y-1),(x,y+1)]
+          avg xs = divColor (foldr sumColor (Color 0 0 0) xs) (length xs)
+
+sumColor :: Color -> Color -> Color
+sumColor (Color r1 g1 b1) (Color r2 g2 b2) = Color (r1+r2) (g1+g2) (b1+b2)
+
+divColor :: Color -> Int -> Color
+divColor (Color r1 g1 b1) i = Color (r1 `div` i) (g1 `div` i) (b1 `div` i)
 ------------------------------------------------------------------------------
 
 ------------------------------------------------------------------------------
@@ -469,7 +505,8 @@ data BlurMany = BlurMany Int
   deriving Show
 
 instance Transform BlurMany where
-  apply = todo
+  apply (BlurMany 0) p = p
+  apply (BlurMany i) p = apply (BlurMany (i-1)) (apply Blur p)
 ------------------------------------------------------------------------------
 
 -- Here's a blurred version of our original snowman. See it by running
