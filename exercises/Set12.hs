@@ -16,10 +16,13 @@ import Mooc.Todo
 --   incrementAll [1,2,3]     ==>  [2,3,4]
 --   incrementAll (Just 3.0)  ==>  Just 4.0
 
+-- fmap {f} {Functor Object}
+-- injects the function object f into the functor object
+-- in this case it increments the functor object
 incrementAll :: (Functor f, Num n) => f n -> f n
-incrementAll x = todo
+incrementAll x = fmap (+1) x
 
-------------------------------------------------------------------------------
+-----------------------------------------------------------------------------e
 -- Ex 2: Sometimes one wants to fmap multiple levels deep. Implement
 -- the functions fmap2 and fmap3 that map over nested functors.
 --
@@ -37,11 +40,14 @@ incrementAll x = todo
 --     fmap3 not (Just [Just False, Nothing])
 --       ==> Just [Just True,Nothing]
 
+-- g is the functor object
+-- f is the function
+-- to "map multiple levels deep", you just have to compose fmap, so it will go deeper
 fmap2 :: (Functor f, Functor g) => (a -> b) -> f (g a) -> f (g b)
-fmap2 = todo
+fmap2 f g = (fmap . fmap) f g
 
 fmap3 :: (Functor f, Functor g, Functor h) => (a -> b) -> f (g (h a)) -> f (g (h b))
-fmap3 = todo
+fmap3 f g = (fmap . fmap . fmap) f g
 
 ------------------------------------------------------------------------------
 -- Ex 3: below you'll find a type Result that works a bit like Maybe,
@@ -53,8 +59,14 @@ fmap3 = todo
 data Result a = MkResult a | NoResult | Failure String
   deriving Show
 
+-- this is the implementation of what fmap does to a functor object
+-- hence (instance)
+-- fmap f (MkResult a) = MkResult (f a)
+-- NoResult and Failure s are not part of the type `a` and does not need to be transformed
 instance Functor Result where
-  fmap f result = todo
+  fmap f (MkResult a) = MkResult (f a)
+  fmap f NoResult = NoResult
+  fmap f (Failure s) = Failure s
 
 ------------------------------------------------------------------------------
 -- Ex 4: Here's a reimplementation of the Haskell list type. You might
@@ -67,7 +79,17 @@ instance Functor Result where
 data List a = Empty | LNode a (List a)
   deriving Show
 
+-- note that for a fmap instance implementation, it will always start with 
+-- f, where f is what the user passes in
+-- when they do `fmap {f} {Functor Object}`
+-- 
+-- Note that when it comes to types like LNode a (List a)
+-- we should only pattern match on the first LNode instance
+-- and the recursive (LNode), we can just recursively call fmap on it instead
+-- just think of this as a recursive function
 instance Functor List where
+  fmap f Empty = Empty
+  fmap f (LNode a b) = LNode (f a) (fmap f b)
 
 ------------------------------------------------------------------------------
 -- Ex 5: Here's another list type. This type every node contains two
@@ -82,6 +104,8 @@ data TwoList a = TwoEmpty | TwoNode a a (TwoList a)
   deriving Show
 
 instance Functor TwoList where
+  fmap f TwoEmpty = TwoEmpty
+  fmap f (TwoNode a a' b) = TwoNode (f a) (f a') (fmap f b)
 
 ------------------------------------------------------------------------------
 -- Ex 6: Count all occurrences of a given element inside a Foldable.
@@ -94,7 +118,7 @@ instance Functor TwoList where
 --   count 'c' (Just 'c') ==> 1
 
 count :: (Eq a, Foldable f) => a -> f a -> Int
-count = todo
+count el foldableObject = length $ filter (\x -> x == el) (toList foldableObject)
 
 ------------------------------------------------------------------------------
 -- Ex 7: Return all elements that are in two Foldables, as a list.
@@ -105,7 +129,8 @@ count = todo
 --   inBoth Nothing [3]    ==> []
 
 inBoth :: (Foldable f, Foldable g, Eq a) => f a -> g a -> [a]
-inBoth = todo
+inBoth foldableA foldableG = 
+  filter (\x -> elem x $ toList foldableA) (toList foldableG)
 
 ------------------------------------------------------------------------------
 -- Ex 8: Implement the instance Foldable List.
@@ -118,7 +143,9 @@ inBoth = todo
 --   length (LNode 1 (LNode 2 (LNode 3 Empty))) ==> 3
 
 instance Foldable List where
-  foldr = todo
+  -- (a -> b -> b) -> b -> List a -> b
+  foldr f init Empty = init
+  foldr f init (LNode a b) = f a (foldr f init b)
 
 ------------------------------------------------------------------------------
 -- Ex 9: Implement the instance Foldable TwoList.
@@ -128,7 +155,8 @@ instance Foldable List where
 --   length (TwoNode 0 1 (TwoNode 2 3 TwoEmpty)) ==> 4
 
 instance Foldable TwoList where
-  foldr = todo
+  foldr f init TwoEmpty = init
+  foldr f init (TwoNode a a' b) = f a (f a' (foldr f init b))
 
 ------------------------------------------------------------------------------
 -- Ex 10: (Tricky!) Fun a is a type that wraps a function Int -> a.
@@ -143,6 +171,7 @@ runFun :: Fun a -> Int -> a
 runFun (Fun f) x = f x
 
 instance Functor Fun where
+  fmap f (Fun f') = Fun (f . f')
 
 ------------------------------------------------------------------------------
 -- Ex 11: (Tricky!) You'll find the binary tree type from Set 5b
@@ -199,10 +228,12 @@ data Tree a = Leaf | Node a (Tree a) (Tree a)
   deriving Show
 
 instance Functor Tree where
-  fmap = todo
+  fmap _ Leaf          = Leaf
+  fmap f (Node a t t') = Node (f a) (fmap f t) (fmap f t')
 
 sumTree :: Monoid m => Tree m -> m
-sumTree = todo
+sumTree Leaf = mempty
+sumTree (Node a t t') = sumTree t <> a <> sumTree t'
 
 instance Foldable Tree where
   foldMap f t = sumTree (fmap f t)
